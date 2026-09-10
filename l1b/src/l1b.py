@@ -63,16 +63,18 @@ class l1b(initL1b):
         :return: TOA in DN, equalized
         """
         #TODO
+        toa = (toa - eq_add) / eq_mult
         return toa
 
     def restoration(self,toa,gain):
         """
         Absolute Radiometric Gain - restore back to radiances
-        :param toa: TOA in DN
+        :param toa: TOA in DN -> TOA (TOP OF ATMOSPHERE)
         :param gain: gain in [rad/DN]
         :return: TOA in radiances [mW/sr/m2]
         """
         #TODO
+        toa = toa * gain
         self.logger.debug('Sanity check. TOA in radiances after gain application ' + str(toa[1,-1]) + ' [mW/m2/sr]')
 
         return toa
