@@ -79,3 +79,4 @@ local.properties
 .pydevproject
 **/__pycache__/
 .idea/
+.venv/
