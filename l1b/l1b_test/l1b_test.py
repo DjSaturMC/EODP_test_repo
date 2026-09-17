@@ -41,30 +41,34 @@ if not matches:
 L1B_FOLDER = matches[0]
 print(f"📁 Carpeta de datos localizada en: {L1B_FOLDER}")
 
-# Rutas exactas actualizadas:
-# MY_EQ toma la versión TRUE sin 'eq' en el nombre
+# Archivos de datos
 TRUTH_PATH = L1B_FOLDER / "input" / "ism_toa_isrf_VNIR-0.nc"
 PROF_EQ = L1B_FOLDER / "output" / "l1b_toa_eq_VNIR-0.nc"
-MY_EQ = L1B_FOLDER / "output_test_marco" / "TRUE_l1b_toa_VNIR-0.nc"
-MY_NO_EQ = L1B_FOLDER / "output_test_marco" / "FALSE_l1b_toa_VNIR-0.nc"
+
+# Archivo ecualizado en DN para cross-validation
+MY_EQ_DN = L1B_FOLDER / "output_test_marco" / "TRUE_l1b_toa_eq_VNIR-0.nc"
+
+# Archivos procesados en Radiancia para la gráfica
+MY_EQ_RAD = L1B_FOLDER / "output_test_marco" / "TRUE_l1b_toa_VNIR-0.nc"
+MY_NO_EQ_RAD = L1B_FOLDER / "output_test_marco" / "FALSE_l1b_toa_VNIR-0.nc"
 
 VAR_NAME = "toa"
 
 
 # ==========================================
-# 2. VALIDACIÓN CRUZADA
+# 2. VALIDACIÓN CRUZADA (EQUALIZED DN vs PROFESORA)
 # ==========================================
 def cross_validate():
     print("\n--- 1. CROSS VALIDATION L1B OUTPUTS EQUALIZED ---")
 
-    if not MY_EQ.exists():
-        print(f"❌ Falta tu archivo: {MY_EQ}")
+    if not MY_EQ_DN.exists():
+        print(f"❌ Falta tu archivo: {MY_EQ_DN}")
         return
     if not PROF_EQ.exists():
         print(f"❌ Falta archivo profe: {PROF_EQ}")
         return
 
-    with xr.open_dataset(MY_EQ) as ds_my, xr.open_dataset(PROF_EQ) as ds_prof:
+    with xr.open_dataset(MY_EQ_DN) as ds_my, xr.open_dataset(PROF_EQ) as ds_prof:
         v_my = ds_my[VAR_NAME].values
         v_prof = ds_prof[VAR_NAME].values
 
@@ -88,18 +92,18 @@ cross_validate()
 # ==========================================
 print("\n--- 2. GENERANDO GRÁFICA COMPARATIVA ---")
 
-if MY_EQ.exists() and MY_NO_EQ.exists() and TRUTH_PATH.exists():
+if MY_EQ_RAD.exists() and MY_NO_EQ_RAD.exists() and TRUTH_PATH.exists():
     with (
         xr.open_dataset(TRUTH_PATH) as ds_t,
-        xr.open_dataset(MY_EQ) as ds_e,
-        xr.open_dataset(MY_NO_EQ) as ds_ne,
+        xr.open_dataset(MY_EQ_RAD) as ds_e,
+        xr.open_dataset(MY_NO_EQ_RAD) as ds_ne,
     ):
 
         v_truth = ds_t[VAR_NAME].values
         v_eq = ds_e[VAR_NAME].values
         v_no_eq = ds_ne[VAR_NAME].values
 
-        # Promediamos sobre el eje espacial/temporal (ALT) para quedarnos con el perfil 1D de ACT
+        # Promediamos sobre el eje espacial/temporal (ALT) para obtener el perfil 1D
         while v_truth.ndim > 1:
             v_truth = np.nanmean(v_truth, axis=0)
         while v_eq.ndim > 1:
@@ -111,7 +115,7 @@ if MY_EQ.exists() and MY_NO_EQ.exists() and TRUTH_PATH.exists():
 
         plt.figure(figsize=(10, 5))
 
-        # Dibujo de curvas con superposición exacta
+        # Dibujo de curvas idéntico al PDF de la profesora
         plt.plot(
             act_pixels,
             v_truth,
