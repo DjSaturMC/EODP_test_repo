@@ -14,10 +14,12 @@ import numpy as np
 import xarray as xr
 
 # ==========================================
-# 1. LOCALIZACIÓN ROBUSTA DE ARCHIVOS
+# 1. BÚSQUEDA Y CONFIGURACIÓN DE RUTAS
 # ==========================================
+# Parto de la ubicación actual de este script
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+# Subo por el árbol de directorios hasta encontrar la raíz del proyecto
 ROOT_PROJECT = None
 for p in [SCRIPT_DIR] + list(SCRIPT_DIR.parents):
     if (
@@ -31,24 +33,25 @@ for p in [SCRIPT_DIR] + list(SCRIPT_DIR.parents):
 if ROOT_PROJECT is None:
     ROOT_PROJECT = SCRIPT_DIR.parents[3]
 
+# Localizo la carpeta de datos EODP-TS-L1B
 matches = list(ROOT_PROJECT.rglob("EODP-TS-L1B"))
 
 if not matches:
     raise FileNotFoundError(
-        f"❌ No se encontró la carpeta 'EODP-TS-L1B' desde: {ROOT_PROJECT}"
+        f"No he podido encontrar la carpeta 'EODP-TS-L1B' desde: {ROOT_PROJECT}"
     )
 
 L1B_FOLDER = matches[0]
-print(f"📁 Carpeta de datos localizada en: {L1B_FOLDER}")
+print(f"Carpeta de datos localizada en: {L1B_FOLDER}")
 
-# Archivos de datos
+# Defino las rutas a los ficheros necesarios para VNIR-0
 TRUTH_PATH = L1B_FOLDER / "input" / "ism_toa_isrf_VNIR-0.nc"
 PROF_EQ = L1B_FOLDER / "output" / "l1b_toa_eq_VNIR-0.nc"
 
-# Archivo ecualizado en DN para cross-validation
+# Mi salida en cuentas digitales para comparar con la profesora
 MY_EQ_DN = L1B_FOLDER / "output_test_marco" / "TRUE_l1b_toa_eq_VNIR-0.nc"
 
-# Archivos procesados en Radiancia para la gráfica
+# Mis salidas en radiancia física para generar la gráfica
 MY_EQ_RAD = L1B_FOLDER / "output_test_marco" / "TRUE_l1b_toa_VNIR-0.nc"
 MY_NO_EQ_RAD = L1B_FOLDER / "output_test_marco" / "FALSE_l1b_toa_VNIR-0.nc"
 
@@ -56,18 +59,19 @@ VAR_NAME = "toa"
 
 
 # ==========================================
-# 2. VALIDACIÓN CRUZADA (EQUALIZED DN vs PROFESORA)
+# 2. VALIDACIÓN CRUZADA EN CUENTAS DIGITALES
 # ==========================================
 def cross_validate():
-    print("\n--- 1. CROSS VALIDATION L1B OUTPUTS EQUALIZED ---")
+    print("\n--- 1. VALIDACIÓN CRUZADA DE SALIDAS ECUALIZADAS ---")
 
     if not MY_EQ_DN.exists():
-        print(f"❌ Falta tu archivo: {MY_EQ_DN}")
+        print(f"Atención: No encuentro mi fichero de salida: {MY_EQ_DN}")
         return
     if not PROF_EQ.exists():
-        print(f"❌ Falta archivo profe: {PROF_EQ}")
+        print(f"Atención: No encuentro el fichero de la profesora: {PROF_EQ}")
         return
 
+    # Comparo mi salida ecualizada en DN con la de referencia
     with xr.open_dataset(MY_EQ_DN) as ds_my, xr.open_dataset(PROF_EQ) as ds_prof:
         v_my = ds_my[VAR_NAME].values
         v_prof = ds_prof[VAR_NAME].values
@@ -75,22 +79,22 @@ def cross_validate():
         diff = np.nanmax(np.abs(v_my - v_prof))
         ok = np.allclose(v_my, v_prof, rtol=1e-5, atol=1e-8, equal_nan=True)
 
-        print(f"Diferencia máxima: {diff:.2e}")
+        print(f"Diferencia máxima observada: {diff:.2e}")
         if ok:
             print(
-                "✅ RESULTADO: Tus outputs ecualizados coinciden con los de la profesora."
+                "Resultado: Correcto. Los datos ecualizados coinciden con la referencia."
             )
         else:
-            print("❌ RESULTADO: Hay diferencias superiores al umbral.")
+            print("Resultado: Se han detectado diferencias superando el umbral.")
 
 
 cross_validate()
 
 
 # ==========================================
-# 3. GRÁFICA COMPARATIVA PERFECTA (FIGURE 8-3)
+# 3. GENERACIÓN DE LA GRÁFICA COMPARATIVA
 # ==========================================
-print("\n--- 2. GENERANDO GRÁFICA COMPARATIVA ---")
+print("\n--- 2. GENERANDO GRÁFICA COMPARATIVA (VNIR-0) ---")
 
 if MY_EQ_RAD.exists() and MY_NO_EQ_RAD.exists() and TRUTH_PATH.exists():
     with (
@@ -103,7 +107,7 @@ if MY_EQ_RAD.exists() and MY_NO_EQ_RAD.exists() and TRUTH_PATH.exists():
         v_eq = ds_e[VAR_NAME].values
         v_no_eq = ds_ne[VAR_NAME].values
 
-        # Promediamos sobre el eje espacial/temporal (ALT) para obtener el perfil 1D
+        # Promedio a lo largo de las dimensiones espaciales/temporales para sacar el perfil 1D a lo largo de los detectores (ACT)
         while v_truth.ndim > 1:
             v_truth = np.nanmean(v_truth, axis=0)
         while v_eq.ndim > 1:
@@ -115,7 +119,7 @@ if MY_EQ_RAD.exists() and MY_NO_EQ_RAD.exists() and TRUTH_PATH.exists():
 
         plt.figure(figsize=(10, 5))
 
-        # Dibujo de curvas idéntico al PDF de la profesora
+        # Dibujo las tres curvas para mostrar el efecto de la ecualización
         plt.plot(
             act_pixels,
             v_truth,
@@ -150,4 +154,4 @@ if MY_EQ_RAD.exists() and MY_NO_EQ_RAD.exists() and TRUTH_PATH.exists():
 
         plt.show()
 else:
-    print("❌ No se encontraron todos los archivos necesarios.")
+    print("Atención: No he localizado todos los ficheros para la gráfica.")
