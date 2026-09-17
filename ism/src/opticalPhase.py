@@ -92,7 +92,9 @@ class opticalPhase(initIsm):
         :param Tr: Optical transmittance [-]
         :return: TOA image in irradiances [mW/m2]
         """
-        # TODO
+        # Función sacada de la teoría
+        toa = Tr * toa * (np.pi/4) * (D/f)**2
+
         return toa
 
 
@@ -114,7 +116,36 @@ class opticalPhase(initIsm):
         :param band: band
         :return: TOA image 2D in radiances [mW/m2]
         """
-        # TODO
+        # Función que nos ha dado nuestra profe
+        isrf, wv_isrf = readIsrf(self.auxdir + '/' + self.ismConfig.isrffile, band)
+
+        # Incializar la vairbale de salida
+        toa = np.zeros((sgm_toa.shape[0], sgm_toa.shape[1]))
+
+        # Normalizamos ISRF -> La suma de los ISRF normalizados debe ser 1
+        isrf = isrf / np.sum(isrf)
+
+        wv_isrf = wv_isrf * 1000 # Multiplicamos por 1000 para pasar a nm.
+
+        # Creamos interpolacion del ISRF con las longitudes de onda del SGM
+        #cs = interp1d(wv_isrf, isrf, fill_value=(0, 0), bounds_error=False)
+        #interp_isrf = cs(sgm_wv) # Vector 1D
+
+        #for ialt in range(sgm_toa.shape[0]):
+          #  for iact in range(sgm_toa.shape[1]):
+
+             #   toa[ialt, iact] = np.sum (sgm_toa[ialt,iact,:] * interp_isrf)
+
+        #
+        for ialt in range(sgm_toa.shape[0]):
+            for iact in range(sgm_toa.shape[1]):
+
+                cs = interp1d(sgm_wv, sgm_toa[ialt, iact, :], fill_value=(0, 0), bounds_error=False)
+                sgm_interp = cs(wv_isrf)
+
+                # Suma ponderada con el ISRF normalizado
+                toa[ialt, iact] = np.sum(sgm_interp * isrf)
+
         return toa
 
 
