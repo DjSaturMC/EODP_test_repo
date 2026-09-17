@@ -4,10 +4,6 @@
 
 # TRUTH = EODP-TS-L1B\input\ism_toa_isrf_VNIR-0.nc
 
-# ==========================================
-# 3. GRÁFICA COMPARATIVA (EJE ACT PIXEL)
-# ==========================================
-
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
