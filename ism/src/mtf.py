@@ -69,7 +69,9 @@ class mtf:
 
         # Calculate the System MTF
         self.logger.debug("Calculation of the Sysmtem MTF by multiplying the different contributors")
-        Hsys = 1 # dummy
+
+        # Combinamos las MTF de todos los componentes para obtener la del sistema.
+        Hsys = Hdiff * Hdefoc * Hwfe * Hdet * Hsmear * Hmotion
 
         # Plot cuts ACT/ALT of the MTF
         self.plotMtf(Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion, Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band)
@@ -118,7 +120,7 @@ class mtf:
         :param fr2D: 2D relative frequencies (f/fc), where fc is the optics cut-off frequency
         :return: diffraction MTF
         """
-        #TODO
+
         """Calcula la MTF de difracción para una apertura circular."""
         fr_clip = np.clip(fr2D, 0.0, 1.0)
 
@@ -142,7 +144,7 @@ class mtf:
         :param D: Telescope diameter [m]
         :return: Defocus MTF
         """
-        #TODO
+
         """Calcula la MTF correspondiente al desenfoque."""
         fr2D = np.asarray(fr2D, dtype=float)
 
@@ -167,7 +169,7 @@ class mtf:
         :param wHF: RMS of high-frequency wavefront errors [m]
         :return: WFE Aberrations MTF
         """
-        #TODO
+
         """Calcula la MTF debida a los errores del frente de onda."""
         fr2D = np.asarray(fr2D, dtype=float)
 
@@ -186,7 +188,7 @@ class mtf:
         :param fnD: 2D normalised frequencies (f/(1/w))), where w is the pixel width
         :return: detector MTF
         """
-        #TODO
+
         """Calcula la MTF del detector a partir de la frecuencia normalizada."""
         fn2D = np.asarray(fn2D, dtype=float)
 
@@ -203,7 +205,17 @@ class mtf:
         :param ksmear: Amplitude of low-frequency component for the motion smear MTF in ALT [pixels]
         :return: Smearing MTF
         """
-        #TODO
+
+        """Calcula la MTF de smearing en la dirección ALT."""
+        fnAlt = np.asarray(fnAlt, dtype=float)
+
+        # Se calcula una respuesta para cada frecuencia ALT.
+        Hsmear = np.sinc(ksmear * fnAlt)
+
+        # Se repite en ACT para obtener una matriz de tamaño
+        # (nlines, ncolumns), como las demás MTF del sistema.
+        Hsmear = np.tile(Hsmear[:, np.newaxis], (1, ncolumns))
+
         return Hsmear
 
     def mtfMotion(self, fn2D, kmotion):
@@ -213,27 +225,87 @@ class mtf:
         :param kmotion: Amplitude of high-frequency component for the motion smear MTF in ALT and ACT
         :return: detector MTF
         """
-        #TODO
+
+        """Calcula la MTF debida al movimiento de la plataforma."""
+        fn2D = np.asarray(fn2D, dtype=float)
+
+        # El movimiento afecta a las frecuencias de ambas direcciones.
+        Hmotion = np.sinc(kmotion * fn2D)
+
         return Hmotion
 
-    def plotMtf(self,Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion, Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band):
-        """
-        Plotting the system MTF and all of its contributors
-        :param Hdiff: Diffraction MTF
-        :param Hdefoc: Defocusing MTF
-        :param Hwfe: Wavefront electronics MTF
-        :param Hdet: Detector MTF
-        :param Hsmear: Smearing MTF
-        :param Hmotion: Motion blur MTF
-        :param Hsys: System MTF
-        :param nlines: Number of lines in the TOA
-        :param ncolumns: Number of columns in the TOA
-        :param fnAct: normalised frequencies in the ACT direction (f/(1/w))
-        :param fnAlt: normalised frequencies in the ALT direction (f/(1/w))
-        :param directory: output directory
-        :param band: band
-        :return: N/A
-        """
-        #TODO
+    def plotMtf(self, Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion,
+                Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band):
+        """Guarda los cortes ACT y ALT y el mapa 2D de la MTF del sistema."""
+        os.makedirs(directory, exist_ok=True)
+
+        # Localizamos la frecuencia cero para hacer los cortes centrales.
+        centro_alt = np.argmin(np.abs(fnAlt))
+        centro_act = np.argmin(np.abs(fnAct))
+
+        # Dibujamos un gráfico para ACT y otro para ALT.
+        for direccion, frecuencias, corte in (
+                ("ACT", fnAct, lambda H: H[centro_alt, :]),
+                ("ALT", fnAlt, lambda H: H[:, centro_act]),
+        ):
+            positivas = frecuencias >= 0
+            fig, ax = plt.subplots(figsize=(9, 5))
+
+            # Mismos colores que en los gráficos de la guía.
+            for nombre, H, color in (
+                    ("Difracción", Hdiff, "#1f77b4"),
+                    ("Desenfoque", Hdefoc, "#ff7f0e"),
+                    ("Aberraciones", Hwfe, "#2ca02c"),
+                    ("Detector", Hdet, "#d62728"),
+                    ("Smearing", Hsmear, "#9467bd"),
+                    ("Movimiento", Hmotion, "#8c564b"),
+                    ("Sistema", Hsys, "black"),
+            ):
+                ax.plot(
+                    frecuencias[positivas],
+                    corte(H)[positivas],
+                    color=color,
+                    linewidth=2 if nombre == "Sistema" else 1,
+                    label=nombre,
+                )
+
+            # Nyquist está en 0,5; ampliamos ligeramente el eje para ver la línea.
+            ax.axvline(0.5, color="black", linestyle="--", label="Nyquist")
+            ax.set_xlim(0, 0.51)
+            ax.set_ylim(0, 1.05)
+            ax.set_xlabel("Frecuencia espacial normalizada")
+            ax.set_ylabel("MTF")
+            ax.set_title(f"MTF - corte {direccion} - {band}")
+            ax.grid(alpha=0.3)
+            ax.legend(fontsize=8)
+
+            fig.tight_layout()
+            fig.savefig(
+                os.path.join(directory, f"mtf_{band}_{direccion}.png"),
+                dpi=150,
+            )
+            plt.close(fig)
+
+        # Mapa 2D de la MTF total, con la paleta usada en la guía.
+        fig, ax = plt.subplots(figsize=(8, 5))
+        imagen = ax.imshow(
+            Hsys,
+            origin="lower",
+            aspect="auto",
+            cmap="jet",
+            vmin=np.min(Hsys),
+            vmax=1,
+        )
+        ax.set_xlabel("ACT (píxeles)")
+        ax.set_ylabel("ALT (píxeles)")
+        ax.set_title(f"MTF del sistema - {band}")
+        fig.colorbar(imagen, ax=ax, label="MTF")
+
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(directory, f"mtf_{band}_2D.png"),
+            dpi=150,
+        )
+        plt.close(fig)
 
 
