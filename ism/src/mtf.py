@@ -119,20 +119,19 @@ class mtf:
         :return: diffraction MTF
         """
         #TODO
-        """Calcula la MTF debida a la difracción."""
+        """Calcula la MTF de difracción para una apertura circular."""
         fr_clip = np.clip(fr2D, 0.0, 1.0)
 
-        # La expresión se evalúa dentro del intervalo de frecuencias válido.
-        Hdiff = 2.0 / np.pi * (
-                np.arccos(fr_clip)
-                - fr_clip * np.sqrt(1.0 - np.square(fr_clip))
+        # Expresión válida hasta la frecuencia de corte.
+        Hdiff = (2.0 / np.pi) * (
+            np.arccos(fr_clip)
+            - fr_clip * np.sqrt(1.0 - fr_clip**2)
         )
 
-        # La MTF se anula por encima de la frecuencia de corte.
+        # Por encima de la frecuencia de corte, la MTF es cero.
         Hdiff = np.where(fr2D > 1.0, 0.0, Hdiff)
 
         return Hdiff
-
 
     def mtfDefocus(self, fr2D, defocus, focal, D):
         """
@@ -144,13 +143,13 @@ class mtf:
         :return: Defocus MTF
         """
         #TODO
-        """Calcula la MTF asociada al desenfoque."""
+        """Calcula la MTF correspondiente al desenfoque."""
         fr2D = np.asarray(fr2D, dtype=float)
 
-        # Argumento de la función de Bessel.
+        # Argumento de la función de Bessel según la guía.
         x = np.pi * defocus * fr2D * (1.0 - fr2D)
 
-        # Se parte del valor límite en x = 0 para evitar una división por cero.
+        # En x = 0, el límite de 2·J1(x)/x es 1.
         Hdefoc = np.ones_like(x)
         mask = np.abs(x) > 1e-12
         Hdefoc[mask] = 2.0 * j1(x[mask]) / x[mask]
@@ -169,6 +168,16 @@ class mtf:
         :return: WFE Aberrations MTF
         """
         #TODO
+        """Calcula la MTF debida a los errores del frente de onda."""
+        fr2D = np.asarray(fr2D, dtype=float)
+
+        # Contribuciones de los errores de baja y alta frecuencia.
+        error_LF = kLF * (wLF / lambd)**2
+        error_HF = kHF * (wHF / lambd)**2
+
+        # Modelo de aberraciones indicado en la guía.
+        Hwfe = np.exp(-fr2D * (1.0 - fr2D) * (error_LF + error_HF))
+
         return Hwfe
 
     def mtfDetector(self,fn2D):
@@ -178,6 +187,12 @@ class mtf:
         :return: detector MTF
         """
         #TODO
+        """Calcula la MTF del detector a partir de la frecuencia normalizada."""
+        fn2D = np.asarray(fn2D, dtype=float)
+
+        # La integración de la luz en cada píxel produce una respuesta sinc.
+        Hdet = np.abs(np.sinc(fn2D))
+
         return Hdet
 
     def mtfSmearing(self, fnAlt, ncolumns, ksmear):
