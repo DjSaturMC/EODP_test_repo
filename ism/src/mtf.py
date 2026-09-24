@@ -119,6 +119,18 @@ class mtf:
         :return: diffraction MTF
         """
         #TODO
+        """Calcula la MTF debida a la difracción."""
+        fr_clip = np.clip(fr2D, 0.0, 1.0)
+
+        # La expresión se evalúa dentro del intervalo de frecuencias válido.
+        Hdiff = 2.0 / np.pi * (
+                np.arccos(fr_clip)
+                - fr_clip * np.sqrt(1.0 - np.square(fr_clip))
+        )
+
+        # La MTF se anula por encima de la frecuencia de corte.
+        Hdiff = np.where(fr2D > 1.0, 0.0, Hdiff)
+
         return Hdiff
 
 
@@ -132,6 +144,17 @@ class mtf:
         :return: Defocus MTF
         """
         #TODO
+        """Calcula la MTF asociada al desenfoque."""
+        fr2D = np.asarray(fr2D, dtype=float)
+
+        # Argumento de la función de Bessel.
+        x = np.pi * defocus * fr2D * (1.0 - fr2D)
+
+        # Se parte del valor límite en x = 0 para evitar una división por cero.
+        Hdefoc = np.ones_like(x)
+        mask = np.abs(x) > 1e-12
+        Hdefoc[mask] = 2.0 * j1(x[mask]) / x[mask]
+
         return Hdefoc
 
     def mtfWfeAberrations(self, fr2D, lambd, kLF, wLF, kHF, wHF):
