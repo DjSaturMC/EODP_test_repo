@@ -159,7 +159,15 @@ class detectionPhase(initIsm):
         :param kprnu: multiplicative factor to the standard normal deviation for the PRNU
         :return: TOA after adding PRNU [e-]
         """
-        #TODO
+        # Convertimos la imagen a un array de valores reales.
+        toa = np.asarray(toa, dtype=float)
+
+        # Generamos una variación de respuesta por cada columna ACT.
+        prnu = np.random.standard_normal(toa.shape[1]) * kprnu
+
+        # Aplicamos el mismo factor a todas las filas de cada columna.
+        toa = toa * (1 + prnu[np.newaxis, :])
+
         return toa
 
 
@@ -174,5 +182,19 @@ class detectionPhase(initIsm):
         :param ds_B_coeff: Empirical parameter of the model 6040 K
         :return: TOA in [e-] with dark signal
         """
-        #TODO
+        toa = np.asarray(toa, dtype=float)
+
+        # Calculamos la señal oscura que depende de la temperatura.
+        Sd = ds_A_coeff * (T / Tref) ** 3
+        Sd = Sd * np.exp(-ds_B_coeff * (1.0 / T - 1.0 / Tref))
+
+        # Generamos una variación positiva para cada columna del detector.
+        dsnu = np.abs(np.random.standard_normal(toa.shape[1])) * kdsnu
+
+        # Combinamos la señal térmica con la variación de cada columna.
+        DS = Sd * (1.0 + dsnu)
+
+        # Sumamos la misma señal oscura a todas las filas de cada columna.
+        toa = toa + DS
+
         return toa
