@@ -104,7 +104,22 @@ class detectionPhase(initIsm):
         :param wv: Central wavelength of the band [m]
         :return: Toa in photons
         """
-        #TODO
+        # Definimos las constantes físicas con los valores de la guía.
+        h = self.constants.h_planck # Constante de Planck [J·s]
+        c = self.constants.speed_light # Velocidad de la luz [m/s]
+
+        # Convertimos la irradiancia de mW/m² a W/m².
+        toa = np.asarray(toa, dtype=float) * 1e-3
+
+        # Calculamos la energía recibida por cada píxel durante la integración.
+        E_in = toa * area_pix * tint
+
+        # Calculamos la energía de un fotón usando la longitud de onda de la banda.
+        E_photon = h * c / wv
+
+        # Dividimos la energía recibida entre la de un fotón.
+        toa_ph = E_in / E_photon
+
         return toa_ph
 
     def phot2Electr(self, toa, QE):
@@ -114,7 +129,14 @@ class detectionPhase(initIsm):
         :param QE: Quantum efficiency [e-/ph]
         :return: toa in electrons
         """
-        #TODO
+        # Convertimos la entrada a un array de valores reales.
+        toa = np.asarray(toa, dtype=float)
+
+        # Aplicamos la eficiencia cuántica para obtener el número de electrones.
+        toae = toa * QE
+
+        toae[toae > self.ismConfig.FWC] = self.ismConfig.FWC
+
         return toae
 
     def badDeadPixels(self, toa,bad_pix,dead_pix,bad_pix_red,dead_pix_red):
