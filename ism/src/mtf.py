@@ -73,6 +73,15 @@ class mtf:
         # Combinamos las MTF de todos los componentes para obtener la del sistema.
         Hsys = Hdiff * Hdefoc * Hwfe * Hdet * Hsmear * Hmotion
 
+        # Guardamos cada MTF para compararla con los archivos de referencia.
+        writeMat(directory, "Hdiff_" + band, Hdiff)
+        writeMat(directory, "Hdefoc_" + band, Hdefoc)
+        writeMat(directory, "Hwfe_" + band, Hwfe)
+        writeMat(directory, "Hdet_" + band, Hdet)
+        writeMat(directory, "Hsmear_" + band, Hsmear)
+        writeMat(directory, "Hmotion_" + band, Hmotion)
+        writeMat(directory, "Hsys_" + band, Hsys)
+
         # Plot cuts ACT/ALT of the MTF
         self.plotMtf(Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion, Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band)
 

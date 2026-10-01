@@ -149,7 +149,40 @@ class detectionPhase(initIsm):
         :param dead_pix_red: Reduction in the quantum efficiency for the dead pixels [-, over 1]
         :return: toa in e- including bad & dead pixels
         """
-        #TODO
+        """Simulamos la reducción de señal de los píxeles malos y muertos."""
+        print("Entramos en badDeadPixels")
+        print("Tamaño de la imagen:", toa.shape)
+        print("Porcentajes bad/dead:", bad_pix, dead_pix)
+        print("Reducciones bad/dead:", bad_pix_red, dead_pix_red)
+        toa = np.array(toa, dtype=float, copy=True)
+
+        # Calculamos el número de columnas afectadas por cada tipo de defecto.
+        toa_act = toa.shape[1]
+        n_bad = int(toa_act * bad_pix / 100.0)
+        n_dead = int(toa_act * dead_pix / 100.0)
+
+        idx_bad = []
+        idx_dead = []
+
+        # Distribuimos los píxeles malos desde la columna 5.
+        if n_bad > 0:
+            step_bad = int(toa_act / n_bad)
+            idx_bad = list(range(5, toa_act, step_bad))
+
+            # Reducimos la señal en todas las filas de esas columnas.
+            toa[:, idx_bad] *= 1.0 - bad_pix_red
+
+        # Distribuimos los píxeles muertos desde la columna 0.
+        if n_dead > 0:
+            step_dead = int(toa_act / n_dead)
+            idx_dead = list(range(0, toa_act, step_dead))
+
+            # Aplicamos la reducción correspondiente a los píxeles muertos.
+            toa[:, idx_dead] *= 1.0 - dead_pix_red
+
+        # Guardamos los índices para comprobar dónde hemos aplicado los defectos.
+        np.savetxt(f"{self.outdir}/idx_bad.txt", idx_bad, fmt="%d")
+        np.savetxt(f"{self.outdir}/idx_dead.txt", idx_dead, fmt="%d")
         return toa
 
     def prnu(self, toa, kprnu):
