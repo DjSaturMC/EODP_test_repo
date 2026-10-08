@@ -1,4 +1,3 @@
-
 # LEVEL-1C
 
 from l1c.src.initL1c import initL1c
@@ -44,25 +43,47 @@ class l1c(initL1c):
 
 
     def l1cProjtoa(self, lat, lon, toa, band):
-        '''
-        This function reprojects the L1B radiances into the MGRS grid.
+        """
+                Reproyectamos las radiancias L1B sobre la cuadrícula MGRS.
+                :param lat: L1B latitudes [deg]
+                :param lon: L1B longitudes [deg]
+                :param toa: L1B radiances
+                :param band: band
+                :return: L1C latitudes, longitudes and radiances
+                """
+        m = mgrs.MGRS()
+        mgrs_tiles = set()
 
-        The MGRS reference system
-        https://www.bluemarblegeo.com/knowledgebase/calculator-2020/Military_Grid_Reference_System_(MGRS).htm
-        MGRS: '31REQ4367374067'
-        31 is the UTM zone, R is the UTM latitude band; EQ are the MGRS column and row band letters
-        43673 is the MGRS Easting (5 dig); 74067 is the MGRS Northing (5dig)
+        # Buscamos las celdas MGRS sin guardar puntos repetidos.
+        for ii in range(toa.shape[0]):
+            for jj in range(toa.shape[1]):
+                auxi = m.toMGRS(
+                    lat[ii, jj],
+                    lon[ii, jj],
+                    MGRSPrecision=self.l1cConfig.mgrs_tile_precision,
+                )
+                mgrs_tiles.add(auxi)
 
-        Python mgrs library documentation
-        https://pypi.org/project/mgrs/
+        mgrs_tiles = list(mgrs_tiles)
 
-        :param lat: L1B latitudes [deg]
-        :param lon: L1B longitudes [deg]
-        :param toa: L1B radiances
-        :param band: band
-        :return: L1C radiances, L1C latitude and longitude in degrees
-        '''
-        #TODO
+        # Reservamos los vectores de salida para las celdas encontradas.
+        toa_l1c = np.zeros(len(mgrs_tiles))
+        lat_l1c = np.zeros(len(mgrs_tiles))
+        lon_l1c = np.zeros(len(mgrs_tiles))
+
+        # Pasamos las entradas a vectores de doble precisión para el ajuste.
+        x = np.asarray(lat, dtype=np.float64).ravel()
+        y = np.asarray(lon, dtype=np.float64).ravel()
+        z = np.asarray(toa, dtype=np.float64).ravel()
+
+        # Construimos el interpolante de las radiancias originales.
+        tck = bisplrep(x, y, z)
+
+        # Recuperamos las coordenadas de cada celda e interpolamos su radiancia.
+        for ii in range(len(mgrs_tiles)):
+            lat_l1c[ii], lon_l1c[ii] = m.toLatLon(mgrs_tiles[ii])
+            toa_l1c[ii] = bisplev(lat_l1c[ii], lon_l1c[ii], tck)
+
         return lat_l1c, lon_l1c, toa_l1c
 
     def checkSize(self, lat,toa):
