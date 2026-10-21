@@ -8,6 +8,6 @@ auxdir = r'C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EO
 indir = r"C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EODP_TER_2021-20260910T154758Z-1-001\\EODP_TER_2021\\EODP-TS-L1B\\input"
 outdir = r"C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EODP_TER_2021-20260910T154758Z-1-001\\EODP_TER_2021\\EODP-TS-L1B\\output_test_marco"
 
-# Initialise the ISM
+# Initialise the L1B
 myL1b = l1b(auxdir, indir, outdir)
 myL1b.processModule()
