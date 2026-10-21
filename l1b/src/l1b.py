@@ -1,4 +1,3 @@
-
 # LEVEL-1B MODULE
 
 from l1b.src.initL1b import initL1b
@@ -9,76 +8,139 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 
+
 class l1b(initL1b):
 
     def __init__(self, auxdir, indir, outdir):
         super().__init__(auxdir, indir, outdir)
 
     def processModule(self):
-
         self.logger.info("Start of the L1B Processing Module")
 
-        for band in self.globalConfig.bands:
+        # Distinguimos ambos casos para no sobrescribir sus resultados.
+        prefix = "TRUE_" if self.l1bConfig.do_equalization else "FALSE_"
 
+        for band in self.globalConfig.bands:
             self.logger.info("Start of BAND " + band)
 
-            # Read TOA - output of the ISM in Digital Numbers
-            # -------------------------------------------------------------------------------
-            toa = readToa(self.indir, self.globalConfig.ism_toa + band + '.nc')
+            # Leemos la salida del ISM en cuentas digitales.
+            toa = readToa(
+                self.indir,
+                self.globalConfig.ism_toa + band + ".nc",
+            )
 
-            # Equalization (radiometric correction)
-            # -------------------------------------------------------------------------------
+            # Aplicamos la ecualización cuando está activada.
             if self.l1bConfig.do_equalization:
-                self.logger.info("EODP-ALG-L1B-1010: Radiometric Correction (equalization)")
+                self.logger.info(
+                    "EODP-ALG-L1B-1010: Radiometric Correction (equalization)"
+                )
 
-                # Read the multiplicative and additive factors from auxiliary/equalization/
-                eq_mult = readFactor(os.path.join(self.auxdir,self.l1bConfig.eq_mult+band+NC_EXT),EQ_MULT)
-                eq_add = readFactor(os.path.join(self.auxdir,self.l1bConfig.eq_add+band+NC_EXT),EQ_ADD)
+                # Leemos los factores de calibración de esta banda.
+                eq_mult = readFactor(
+                    os.path.join(
+                        self.auxdir,
+                        self.l1bConfig.eq_mult + band + NC_EXT,
+                    ),
+                    EQ_MULT,
+                )
 
-                # Do the equalization and save to file
+                eq_add = readFactor(
+                    os.path.join(
+                        self.auxdir,
+                        self.l1bConfig.eq_add + band + NC_EXT,
+                    ),
+                    EQ_ADD,
+                )
+
+                # Corregimos la señal y guardamos el resultado todavía en DN.
                 toa = self.equalization(toa, eq_add, eq_mult)
-                writeToa(self.outdir, self.globalConfig.l1b_toa_eq + band, toa)
 
-            # Restitution (absolute radiometric gain)
-            # -------------------------------------------------------------------------------
-            self.logger.info("EODP-ALG-L1B-1020: Absolute radiometric gain application (restoration)")
-            toa = self.restoration(toa, self.l1bConfig.gain[getIndexBand(band)])
+                name = prefix + self.globalConfig.l1b_toa_eq + band
+                writeToa(self.outdir, name, toa)
+                self.logger.info("Archivo guardado: %s.nc", name)
 
-            # Write output TOA
-            # -------------------------------------------------------------------------------
-            writeToa(self.outdir, self.globalConfig.l1b_toa + band, toa)
+            # Convertimos la señal de cuentas digitales a radiancias.
+            self.logger.info(
+                "EODP-ALG-L1B-1020: Absolute radiometric gain "
+                "application (restoration)"
+            )
+
+            toa = self.restoration(
+                toa,
+                self.l1bConfig.gain[getIndexBand(band)],
+            )
+
+            # Guardamos las radiancias y su perfil ACT.
+            name = prefix + self.globalConfig.l1b_toa + band
+            writeToa(self.outdir, name, toa)
+            self.logger.info("Archivo guardado: %s.nc", name)
+
             self.plotL1bToa(toa, self.outdir, band)
 
             self.logger.info("End of BAND " + band)
 
         self.logger.info("End of the L1B Module!")
 
-
     def equalization(self, toa, eq_add, eq_mult):
         """
-        Equlization. Apply an offset and a gain.
+        Equalization. Apply an offset and a gain.
         :param toa: TOA in DN
         :param eq_add: Offset in DN
         :param eq_mult: Gain factor, adimensional
         :return: TOA in DN, equalized
         """
-        #TODO
+        # Restamos el offset y corregimos la respuesta de cada detector.
         toa = (toa - eq_add) / eq_mult
+
         return toa
 
-    def restoration(self,toa,gain):
+    def restoration(self, toa, gain):
         """
-        Absolute Radiometric Gain - restore back to radiances
-        :param toa: TOA in DN -> TOA (TOP OF ATMOSPHERE)
-        :param gain: gain in [rad/DN]
-        :return: TOA in radiances [mW/sr/m2]
+        Absolute Radiometric Gain - restore back to radiances.
+        :param toa: TOA in DN
+        :param gain: gain in [mW/m2/sr/DN]
+        :return: TOA in radiances [mW/m2/sr]
         """
-        #TODO
+        # Aplicamos la ganancia radiométrica de la banda.
         toa = toa * gain
-        self.logger.debug('Sanity check. TOA in radiances after gain application ' + str(toa[1,-1]) + ' [mW/m2/sr]')
+
+        self.logger.debug(
+            "Sanity check. TOA in radiances after gain application "
+            + str(toa[1, -1])
+            + " [mW/m2/sr]"
+        )
 
         return toa
 
     def plotL1bToa(self, toa_l1b, outputdir, band):
-        #TODO
-        a=1 # dummy
+        # Identificamos si esta salida tiene aplicada la ecualización.
+        prefix = "TRUE_" if self.l1bConfig.do_equalization else "FALSE_"
+
+        # Promediamos las filas ALT para obtener un perfil por detector ACT.
+        perfil = np.mean(toa_l1b, axis=0)
+        act_pixels = np.arange(len(perfil))
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        ax.plot(
+            act_pixels,
+            perfil,
+            color="black",
+            linewidth=1.5,
+        )
+
+        ax.set_title(
+            f"L1B radiances - {band} - equalization {prefix[:-1]}"
+        )
+        ax.set_xlabel("ACT pixel [-]")
+        ax.set_ylabel("TOA [mW/m2/sr]")
+        ax.grid(alpha=0.5)
+
+        fig.tight_layout()
+
+        # Guardamos el perfil con el mismo nombre base que su archivo numérico.
+        name = prefix + self.globalConfig.l1b_toa + band + ".png"
+        fig.savefig(os.path.join(outputdir, name), dpi=150)
+        plt.close(fig)
+
+        self.logger.info("Gráfica guardada: %s", name)
