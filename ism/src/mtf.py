@@ -1,119 +1,102 @@
-from math import pi
 from config.ismConfig import ismConfig
 import numpy as np
-import math
 import matplotlib.pyplot as plt
 from scipy.special import j1
-from numpy.matlib import repmat
 from common.io.readMat import writeMat
-from common.plot.plotMat2D import plotMat2D
-from scipy.interpolate import interp2d
-from numpy.fft import fftshift, ifft2
 import os
 
+
 class mtf:
-    """
-    Class MTF. Collects the analytical modelling of the different contributions
-    for the system MTF
-    """
+    """Calculamos las contribuciones a la MTF del sistema."""
+
     def __init__(self, logger, outdir):
         self.ismConfig = ismConfig()
         self.logger = logger
         self.outdir = outdir
 
-    def system_mtf(self, nlines, ncolumns, D, lambd, focal, pix_size,
-                   kLF, wLF, kHF, wHF, defocus, ksmear, kmotion, directory, band):
-        """
-        System MTF
-        :param nlines: Lines of the TOA
-        :param ncolumns: Columns of the TOA
-        :param D: Telescope diameter [m]
-        :param lambd: central wavelength of the band [m]
-        :param focal: focal length [m]
-        :param pix_size: pixel size in meters [m]
-        :param kLF: Empirical coefficient for the aberrations MTF for low-frequency wavefront errors [-]
-        :param wLF: RMS of low-frequency wavefront errors [m]
-        :param kHF: Empirical coefficient for the aberrations MTF for high-frequency wavefront errors [-]
-        :param wHF: RMS of high-frequency wavefront errors [m]
-        :param defocus: Defocus coefficient (defocus/(f/N)). 0-2 low defocusing
-        :param ksmear: Amplitude of low-frequency component for the motion smear MTF in ALT [pixels]
-        :param kmotion: Amplitude of high-frequency component for the motion smear MTF in ALT and ACT
-        :param directory: output directory
-        :return: mtf
-        """
+    def system_mtf(
+        self, nlines, ncolumns, D, lambd, focal, pix_size,
+        kLF, wLF, kHF, wHF, defocus, ksmear, kmotion,
+        directory, band,
+    ):
+        """Calculamos, guardamos y representamos las MTF de una banda."""
+        self.logger.info(
+            "Calculation of the System MTF - %s", band
+        )
 
-        self.logger.info("Calculation of the System MTF")
+        # Calculamos las frecuencias con el mismo muestreo de la imagen.
+        fn2D, fr2D, fnAct, fnAlt = self.freq2d(
+            nlines, ncolumns, D, lambd, focal, pix_size
+        )
 
-        # Calculate the 2D relative frequencies
-        self.logger.debug("Calculation of 2D relative frequencies")
-        fn2D, fr2D, fnAct, fnAlt = self.freq2d(nlines, ncolumns, D, lambd, focal, pix_size)
-
-        # Diffraction MTF
-        self.logger.debug("Calculation of the diffraction MTF")
+        # Calculamos cada contribución por separado.
         Hdiff = self.mtfDiffract(fr2D)
-
-        # Defocus
         Hdefoc = self.mtfDefocus(fr2D, defocus, focal, D)
-
-        # WFE Aberrations
-        Hwfe = self.mtfWfeAberrations(fr2D, lambd, kLF, wLF, kHF, wHF)
-
-        # Detector
-        Hdet  = self. mtfDetector(fn2D)
-
-        # Smearing MTF
+        Hwfe = self.mtfWfeAberrations(
+            fr2D, lambd, kLF, wLF, kHF, wHF
+        )
+        Hdet = self.mtfDetector(fn2D)
         Hsmear = self.mtfSmearing(fnAlt, ncolumns, ksmear)
-
-        # Motion blur MTF
         Hmotion = self.mtfMotion(fn2D, kmotion)
 
-        # Calculate the System MTF
-        self.logger.debug("Calculation of the Sysmtem MTF by multiplying the different contributors")
-
-        # Combinamos las MTF de todos los componentes para obtener la del sistema.
+        # Multiplicamos las contribuciones para obtener la MTF total.
         Hsys = Hdiff * Hdefoc * Hwfe * Hdet * Hsmear * Hmotion
 
-        # Guardamos cada MTF para compararla con los archivos de referencia.
-        writeMat(directory, "Hdiff_" + band, Hdiff)
-        writeMat(directory, "Hdefoc_" + band, Hdefoc)
-        writeMat(directory, "Hwfe_" + band, Hwfe)
-        writeMat(directory, "Hdet_" + band, Hdet)
-        writeMat(directory, "Hsmear_" + band, Hsmear)
-        writeMat(directory, "Hmotion_" + band, Hmotion)
-        writeMat(directory, "Hsys_" + band, Hsys)
+        # Guardamos las siete matrices para compararlas con la referencia.
+        for nombre, H in (
+            ("Hdiff", Hdiff),
+            ("Hdefoc", Hdefoc),
+            ("Hwfe", Hwfe),
+            ("Hdet", Hdet),
+            ("Hsmear", Hsmear),
+            ("Hmotion", Hmotion),
+            ("Hsys", Hsys),
+        ):
+            writeMat(directory, nombre + "_" + band, H)
+            self.logger.info(
+                "MTF guardada: %s_%s.nc", nombre, band
+            )
 
-        # Plot cuts ACT/ALT of the MTF
-        self.plotMtf(Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion, Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band)
-
+        self.plotMtf(
+            Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion,
+            Hsys, nlines, ncolumns, fnAct, fnAlt,
+            directory, band,
+        )
 
         return Hsys
 
-    def freq2d(self,nlines, ncolumns, D, lambd, focal, w):
+    def freq2d(self, nlines, ncolumns, D, lambd, focal, w):
         """
-        Calculate the relative frequencies 2D (for the diffraction MTF)
-        :param nlines: Lines of the TOA
-        :param ncolumns: Columns of the TOA
-        :param D: Telescope diameter [m]
-        :param lambd: central wavelength of the band [m]
-        :param focal: focal length [m]
-        :param w: pixel size in meters [m]
-        :return fn2D: normalised frequencies 2D (f/(1/w))
-        :return fr2D: relative frequencies 2D (f/(1/fc))
-        :return fnAct: 1D normalised frequencies 2D ACT (f/(1/w))
-        :return fnAlt: 1D normalised frequencies 2D ALT (f/(1/w))
+        Calculamos las frecuencias espaciales de la imagen.
+        fn2D: frecuencia radial normalizada con 1/w.
+        fr2D: frecuencia radial relativa a la frecuencia de corte.
+        fnAct y fnAlt: frecuencias normalizadas de cada dirección.
         """
-        #TODO
-        fstepAlt = 1 / nlines / w # 333.3333333
-        fstepAct = 1 / ncolumns / w # 222.2222222
-
+        # Conservamos el paso y el intervalo utilizados anteriormente.
+        fstepAlt = 1 / nlines / w
+        fstepAct = 1 / ncolumns / w
         eps = 1e-6
 
-        fAlt = np.arange(-1 / (2 * w), 1 / (2 * w) - eps, fstepAlt)
-        fAct = np.arange(-1 / (2 * w), 1 / (2 * w) - eps, fstepAct)
+        fAlt = np.arange(
+            -1 / (2 * w),
+            1 / (2 * w) - eps,
+            fstepAlt,
+        )
+        fAct = np.arange(
+            -1 / (2 * w),
+            1 / (2 * w) - eps,
+            fstepAct,
+        )
 
-        [fAltxx, fActxx] = np.meshgrid(fAlt, fAct, indexing='ij')  # Please use ‘ij’ indexing or you will get the transpose
-        f2D = np.sqrt(fAltxx * fAltxx + fActxx * fActxx)
+        # Usamos ij para conservar el orden de filas ALT y columnas ACT.
+        fAltxx, fActxx = np.meshgrid(
+            fAlt, fAct, indexing="ij"
+        )
+        f2D = np.sqrt(
+            fAltxx * fAltxx + fActxx * fActxx
+        )
 
+        # Calculamos la frecuencia de corte de la óptica.
         fc = D / (lambd * focal)
 
         fn2D = f2D / (1 / w)
@@ -123,152 +106,108 @@ class mtf:
 
         return fn2D, fr2D, fnAct, fnAlt
 
-    def mtfDiffract(self,fr2D):
-        """
-        Optics Diffraction MTF
-        :param fr2D: 2D relative frequencies (f/fc), where fc is the optics cut-off frequency
-        :return: diffraction MTF
-        """
-
-        """Calcula la MTF de difracción para una apertura circular."""
+    def mtfDiffract(self, fr2D):
+        """Calculamos la MTF de difracción de una apertura circular."""
+        # Limitamos el argumento para evaluar la expresión sin raíces inválidas.
         fr_clip = np.clip(fr2D, 0.0, 1.0)
 
-        # Expresión válida hasta la frecuencia de corte.
         Hdiff = (2.0 / np.pi) * (
             np.arccos(fr_clip)
             - fr_clip * np.sqrt(1.0 - fr_clip**2)
         )
 
-        # Por encima de la frecuencia de corte, la MTF es cero.
+        # Anulamos la respuesta por encima de la frecuencia de corte.
         Hdiff = np.where(fr2D > 1.0, 0.0, Hdiff)
 
         return Hdiff
 
     def mtfDefocus(self, fr2D, defocus, focal, D):
-        """
-        Defocus MTF
-        :param fr2D: 2D relative frequencies (f/fc), where fc is the optics cut-off frequency
-        :param defocus: Defocus coefficient (defocus/(f/N)). 0-2 low defocusing
-        :param focal: focal length [m]
-        :param D: Telescope diameter [m]
-        :return: Defocus MTF
-        """
-
-        """Calcula la MTF correspondiente al desenfoque."""
+        """Calculamos la contribución del desenfoque."""
         fr2D = np.asarray(fr2D, dtype=float)
 
-        # Argumento de la función de Bessel según la guía.
+        # Calculamos el argumento de la función de Bessel.
         x = np.pi * defocus * fr2D * (1.0 - fr2D)
 
-        # En x = 0, el límite de 2·J1(x)/x es 1.
+        # Usamos el límite igual a uno cuando el argumento es cero.
         Hdefoc = np.ones_like(x)
         mask = np.abs(x) > 1e-12
         Hdefoc[mask] = 2.0 * j1(x[mask]) / x[mask]
 
         return Hdefoc
 
-    def mtfWfeAberrations(self, fr2D, lambd, kLF, wLF, kHF, wHF):
-        """
-        Wavefront Error Aberrations MTF
-        :param fr2D: 2D relative frequencies (f/fc), where fc is the optics cut-off frequency
-        :param lambd: central wavelength of the band [m]
-        :param kLF: Empirical coefficient for the aberrations MTF for low-frequency wavefront errors [-]
-        :param wLF: RMS of low-frequency wavefront errors [m]
-        :param kHF: Empirical coefficient for the aberrations MTF for high-frequency wavefront errors [-]
-        :param wHF: RMS of high-frequency wavefront errors [m]
-        :return: WFE Aberrations MTF
-        """
-
-        """Calcula la MTF debida a los errores del frente de onda."""
+    def mtfWfeAberrations(
+        self, fr2D, lambd, kLF, wLF, kHF, wHF
+    ):
+        """Calculamos la contribución de los errores de frente de onda."""
         fr2D = np.asarray(fr2D, dtype=float)
 
-        # Contribuciones de los errores de baja y alta frecuencia.
+        # Calculamos las contribuciones de baja y alta frecuencia.
         error_LF = kLF * (wLF / lambd)**2
         error_HF = kHF * (wHF / lambd)**2
 
-        # Modelo de aberraciones indicado en la guía.
-        Hwfe = np.exp(-fr2D * (1.0 - fr2D) * (error_LF + error_HF))
+        # Aplicamos la expresión de la guía.
+        Hwfe = np.exp(
+            -fr2D * (1.0 - fr2D) * (error_LF + error_HF)
+        )
 
         return Hwfe
 
-    def mtfDetector(self,fn2D):
-        """
-        Detector MTF
-        :param fnD: 2D normalised frequencies (f/(1/w))), where w is the pixel width
-        :return: detector MTF
-        """
-
-        """Calcula la MTF del detector a partir de la frecuencia normalizada."""
+    def mtfDetector(self, fn2D):
+        """Calculamos la MTF debida a la integración en el píxel."""
         fn2D = np.asarray(fn2D, dtype=float)
 
-        # La integración de la luz en cada píxel produce una respuesta sinc.
+        # Aplicamos el valor absoluto de la sinc normalizada.
         Hdet = np.abs(np.sinc(fn2D))
 
         return Hdet
 
     def mtfSmearing(self, fnAlt, ncolumns, ksmear):
-        """
-        Smearing MTF
-        :param ncolumns: Size of the image ACT
-        :param fnAlt: 1D normalised frequencies 2D ALT (f/(1/w))
-        :param ksmear: Amplitude of low-frequency component for the motion smear MTF in ALT [pixels]
-        :return: Smearing MTF
-        """
-
-        """Calcula la MTF de smearing en la dirección ALT."""
+        """Calculamos el smearing en la dirección ALT."""
         fnAlt = np.asarray(fnAlt, dtype=float)
 
-        # Se calcula una respuesta para cada frecuencia ALT.
+        # Calculamos la respuesta ALT y la repetimos en todas las columnas.
         Hsmear = np.sinc(ksmear * fnAlt)
-
-        # Se repite en ACT para obtener una matriz de tamaño
-        # (nlines, ncolumns), como las demás MTF del sistema.
-        Hsmear = np.tile(Hsmear[:, np.newaxis], (1, ncolumns))
+        Hsmear = np.tile(
+            Hsmear[:, np.newaxis], (1, ncolumns)
+        )
 
         return Hsmear
 
     def mtfMotion(self, fn2D, kmotion):
-        """
-        Motion blur MTF
-        :param fnD: 2D normalised frequencies (f/(1/w))), where w is the pixel width
-        :param kmotion: Amplitude of high-frequency component for the motion smear MTF in ALT and ACT
-        :return: detector MTF
-        """
-
-        """Calcula la MTF debida al movimiento de la plataforma."""
+        """Calculamos la contribución del movimiento de la plataforma."""
         fn2D = np.asarray(fn2D, dtype=float)
 
-        # El movimiento afecta a las frecuencias de ambas direcciones.
         Hmotion = np.sinc(kmotion * fn2D)
 
         return Hmotion
 
-    def plotMtf(self, Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion,
-                Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band):
-        """Guarda los cortes ACT y ALT y el mapa 2D de la MTF del sistema."""
+    def plotMtf(
+        self, Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion,
+        Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band,
+    ):
+        """Guardamos los cortes ACT y ALT y el mapa 2D del sistema."""
         os.makedirs(directory, exist_ok=True)
 
-        # Localizamos la frecuencia cero para hacer los cortes centrales.
+        # Localizamos la frecuencia cero para obtener los cortes centrales.
         centro_alt = np.argmin(np.abs(fnAlt))
         centro_act = np.argmin(np.abs(fnAct))
 
-        # Dibujamos un gráfico para ACT y otro para ALT.
         for direccion, frecuencias, corte in (
-                ("ACT", fnAct, lambda H: H[centro_alt, :]),
-                ("ALT", fnAlt, lambda H: H[:, centro_act]),
+            ("ACT", fnAct, lambda H: H[centro_alt, :]),
+            ("ALT", fnAlt, lambda H: H[:, centro_act]),
         ):
             positivas = frecuencias >= 0
             fig, ax = plt.subplots(figsize=(9, 5))
 
-            # Mismos colores que en los gráficos de la guía.
+            # Conservamos los colores de las gráficas de la guía.
             for nombre, H, color in (
-                    ("Difracción", Hdiff, "#1f77b4"),
-                    ("Desenfoque", Hdefoc, "#ff7f0e"),
-                    ("Aberraciones", Hwfe, "#2ca02c"),
-                    ("Detector", Hdet, "#d62728"),
-                    ("Smearing", Hsmear, "#9467bd"),
-                    ("Movimiento", Hmotion, "#8c564b"),
-                    ("Sistema", Hsys, "black"),
+                ("Difracción", Hdiff, "#1f77b4"),
+                ("Desenfoque", Hdefoc, "#ff7f0e"),
+                ("Aberraciones", Hwfe, "#2ca02c"),
+                ("Detector", Hdet, "#d62728"),
+                ("Smearing", Hsmear, "#9467bd"),
+                ("Movimiento", Hmotion, "#8c564b"),
+                ("Sistema", Hsys, "black"),
             ):
                 ax.plot(
                     frecuencias[positivas],
@@ -278,8 +217,13 @@ class mtf:
                     label=nombre,
                 )
 
-            # Nyquist está en 0,5; ampliamos ligeramente el eje para ver la línea.
-            ax.axvline(0.5, color="black", linestyle="--", label="Nyquist")
+            # Señalamos Nyquist y dejamos margen para ver la línea.
+            ax.axvline(
+                0.5,
+                color="black",
+                linestyle="--",
+                label="Nyquist",
+            )
             ax.set_xlim(0, 0.51)
             ax.set_ylim(0, 1.05)
             ax.set_xlabel("Frecuencia espacial normalizada")
@@ -289,14 +233,19 @@ class mtf:
             ax.legend(fontsize=8)
 
             fig.tight_layout()
+
+            name = f"mtf_{band}_{direccion}.png"
             fig.savefig(
-                os.path.join(directory, f"mtf_{band}_{direccion}.png"),
+                os.path.join(directory, name),
                 dpi=150,
             )
             plt.close(fig)
 
-        # Mapa 2D de la MTF total, con la paleta usada en la guía.
+            self.logger.info("Gráfica MTF guardada: %s", name)
+
+        # Representamos la MTF total con la misma paleta anterior.
         fig, ax = plt.subplots(figsize=(8, 5))
+
         imagen = ax.imshow(
             Hsys,
             origin="lower",
@@ -305,16 +254,19 @@ class mtf:
             vmin=np.min(Hsys),
             vmax=1,
         )
+
         ax.set_xlabel("ACT (píxeles)")
         ax.set_ylabel("ALT (píxeles)")
         ax.set_title(f"MTF del sistema - {band}")
         fig.colorbar(imagen, ax=ax, label="MTF")
 
         fig.tight_layout()
+
+        name = f"mtf_{band}_2D.png"
         fig.savefig(
-            os.path.join(directory, f"mtf_{band}_2D.png"),
+            os.path.join(directory, name),
             dpi=150,
         )
         plt.close(fig)
 
-
+        self.logger.info("Gráfica MTF guardada: %s", name)

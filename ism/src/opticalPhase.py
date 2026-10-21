@@ -1,16 +1,14 @@
-
 from ism.src.initIsm import initIsm
-from math import pi
 from ism.src.mtf import mtf
 from numpy.fft import fftshift, ifft2, fft2
 import numpy as np
 from common.io.writeToa import writeToa
 from common.io.readIsrf import readIsrf
-from scipy.interpolate import interp1d, interp2d
+from scipy.interpolate import interp1d
 from common.plot.plotMat2D import plotMat2D
 from common.plot.plotF import plotF
-from scipy.signal import convolve2d
 from common.src.auxFunc import getIndexBand
+
 
 class opticalPhase(initIsm):
 
@@ -19,140 +17,180 @@ class opticalPhase(initIsm):
 
     def compute(self, sgm_toa, sgm_wv, band):
         """
-        The optical phase is in charge of simulating the radiance
-        to irradiance conversion, the spatial filter (PSF)
-        and the spectral filter (ISRF).
-        :return: TOA image in irradiances [mW/m2/nm],
-                    with spatial and spectral filter
+        Aplicamos la integración espectral, convertimos radiancias
+        a irradiancias y aplicamos el filtro espacial.
+        Devolvemos la imagen en irradiancias [mW/m2].
         """
         self.logger.info("EODP-ALG-ISM-1000: Optical stage")
 
-        # Calculation and application of the ISRF
-        # -------------------------------------------------------------------------------
-        self.logger.info("EODP-ALG-ISM-1010: Spectral modelling. ISRF")
+        # Integramos el espectro con la respuesta de esta banda.
+        self.logger.info(
+            "EODP-ALG-ISM-1010: Spectral modelling. ISRF"
+        )
+
         toa = self.spectralIntegration(sgm_toa, sgm_wv, band)
 
-        self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [e-]")
+        self.logPixel(toa, band, "isrf", "mW/m2/sr")
 
         if self.ismConfig.save_after_isrf:
             saveas_str = self.globalConfig.ism_toa_isrf + band
             writeToa(self.outdir, saveas_str, toa)
 
-        # Radiance to Irradiance conversion
-        # -------------------------------------------------------------------------------
-        self.logger.info("EODP-ALG-ISM-1020: Radiances to Irradiances")
-        toa = self.rad2Irrad(toa,
-                             self.ismConfig.D,
-                             self.ismConfig.f,
-                             self.ismConfig.Tr)
+        # Convertimos las radiancias a irradiancias.
+        self.logger.info(
+            "EODP-ALG-ISM-1020: Radiances to Irradiances"
+        )
 
-        self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [e-]")
+        toa = self.rad2Irrad(
+            toa,
+            self.ismConfig.D,
+            self.ismConfig.f,
+            self.ismConfig.Tr,
+        )
 
-        # Spatial filter
-        # -------------------------------------------------------------------------------
-        # Calculation and application of the system MTF
-        self.logger.info("EODP-ALG-ISM-1030: Spatial modelling. PSF/MTF")
+        self.logPixel(toa, band, "irradiance_before_mtf", "mW/m2")
+
+        # Calculamos las contribuciones a la MTF del sistema.
+        self.logger.info(
+            "EODP-ALG-ISM-1030: Spatial modelling. PSF/MTF"
+        )
+
         myMtf = mtf(self.logger, self.outdir)
-        Hsys = myMtf.system_mtf(toa.shape[0], toa.shape[1],
-                                self.ismConfig.D, self.ismConfig.wv[getIndexBand(band)], self.ismConfig.f, self.ismConfig.pix_size,
-                                self.ismConfig.kLF, self.ismConfig.wLF, self.ismConfig.kHF, self.ismConfig.wHF,
-                                self.ismConfig.defocus, self.ismConfig.ksmear, self.ismConfig.kmotion,
-                                self.outdir, band)
 
-        # Apply system MTF
-        toa = self.applySysMtf(toa, Hsys) # always calculated
-        self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [e-]")
+        Hsys = myMtf.system_mtf(
+            toa.shape[0],
+            toa.shape[1],
+            self.ismConfig.D,
+            self.ismConfig.wv[getIndexBand(band)],
+            self.ismConfig.f,
+            self.ismConfig.pix_size,
+            self.ismConfig.kLF,
+            self.ismConfig.wLF,
+            self.ismConfig.kHF,
+            self.ismConfig.wHF,
+            self.ismConfig.defocus,
+            self.ismConfig.ksmear,
+            self.ismConfig.kmotion,
+            self.outdir,
+            band,
+        )
 
+        # Aplicamos la misma MTF que utilizábamos anteriormente.
+        toa = self.applySysMtf(toa, Hsys)
 
+        self.logPixel(toa, band, "optical", "mW/m2")
 
-        # Write output TOA & plots
-        # -------------------------------------------------------------------------------
+        # Guardamos la imagen y los gráficos de la fase óptica.
         if self.ismConfig.save_optical_stage:
             saveas_str = self.globalConfig.ism_toa_optical + band
-
             writeToa(self.outdir, saveas_str, toa)
 
-            title_str = 'TOA after the optical phase [mW/sr/m2]'
-            xlabel_str='ACT'
-            ylabel_str='ALT'
-            plotMat2D(toa, title_str, xlabel_str, ylabel_str, self.outdir, saveas_str)
+            title_str = "TOA after the optical phase [mW/m2]"
+            xlabel_str = "ACT"
+            ylabel_str = "ALT"
 
-            idalt = int(toa.shape[0]/2)
-            saveas_str = saveas_str + '_alt' + str(idalt)
-            plotF([], toa[idalt,:], title_str, xlabel_str, ylabel_str, self.outdir, saveas_str)
+            plotMat2D(
+                toa,
+                title_str,
+                xlabel_str,
+                ylabel_str,
+                self.outdir,
+                saveas_str,
+            )
+
+            idalt = int(toa.shape[0] / 2)
+            saveas_str = saveas_str + "_alt" + str(idalt)
+
+            plotF(
+                [],
+                toa[idalt, :],
+                title_str,
+                xlabel_str,
+                ylabel_str,
+                self.outdir,
+                saveas_str,
+            )
 
         return toa
+
+    def logPixel(self, toa, band, etapa, unidad):
+        # Registramos el píxel solicitado sin modificar los datos.
+        if toa.shape[0] > 50 and toa.shape[1] > 75:
+            self.logger.info(
+                "PIXEL band=%s stage=%s value=%.17g unit=%s",
+                band,
+                etapa,
+                float(toa[50, 75]),
+                unidad,
+            )
+        else:
+            self.logger.warning(
+                "No podemos registrar [50,75]: imagen de tamaño %s",
+                toa.shape,
+            )
 
     def rad2Irrad(self, toa, D, f, Tr):
         """
-        Radiance to Irradiance conversion
-        :param toa: Input TOA image in radiances [mW/sr/m2]
-        :param D: Pupil diameter [m]
-        :param f: Focal length [m]
-        :param Tr: Optical transmittance [-]
-        :return: TOA image in irradiances [mW/m2]
+        Convertimos radiancias [mW/m2/sr] a irradiancias [mW/m2].
+        D: diámetro de la pupila [m].
+        f: distancia focal [m].
+        Tr: transmitancia óptica.
         """
-        # Función sacada de la teoría
-        toa = Tr * toa * (np.pi/4) * (D/f)**2
+        # Aplicamos el factor de conversión indicado en la guía.
+        toa = Tr * toa * (np.pi / 4) * (D / f)**2
 
         return toa
 
-
     def applySysMtf(self, toa, Hsys):
         """
-        Application of the system MTF to the TOA
-        :param toa: Input TOA image in irradiances [mW/m2]
-        :param Hsys: System MTF
-        :return: TOA image in irradiances [mW/m2]
+        Aplicamos la MTF del sistema a la imagen en irradiancias.
+        La entrada y la salida están en [mW/m2].
         """
-
+        # Transformamos la imagen al dominio de frecuencias.
         GE = fft2(toa)
+
+        # Colocamos la frecuencia cero de la MTF en la posición de la FFT.
         GE = GE * fftshift(Hsys)
 
+        # Recuperamos la imagen y conservamos la parte real.
         toa_ft = ifft2(GE)
-
         toa_ft = np.real(toa_ft)
 
         return toa_ft
 
     def spectralIntegration(self, sgm_toa, sgm_wv, band):
         """
-        Integration with the ISRF to retrieve one band
-        :param sgm_toa: Spectrally oversampled TOA cube 3D in irradiances [mW/m2]
-        :param sgm_wv: wavelengths of the input TOA cube
-        :param band: band
-        :return: TOA image 2D in radiances [mW/m2]
+        Integramos el cubo espectral con la ISRF de la banda.
+        Devolvemos una imagen 2D en radiancias [mW/m2/sr].
         """
-        # Función que nos ha dado nuestra profe
-        isrf, wv_isrf = readIsrf(self.auxdir + '/' + self.ismConfig.isrffile, band)
+        # Conservamos el procedimiento proporcionado por la profesora.
+        isrf, wv_isrf = readIsrf(
+            self.auxdir + "/" + self.ismConfig.isrffile,
+            band,
+        )
 
-        # Incializar la vairbale de salida
         toa = np.zeros((sgm_toa.shape[0], sgm_toa.shape[1]))
 
-        # Normalizamos ISRF -> La suma de los ISRF normalizados debe ser 1
+        # Normalizamos la respuesta espectral para que sus pesos sumen uno.
         isrf = isrf / np.sum(isrf)
 
-        wv_isrf = wv_isrf * 1000 # Multiplicamos por 1000 para pasar a nm.
+        # Convertimos las longitudes de onda de la ISRF a nanómetros.
+        wv_isrf = wv_isrf * 1000
 
-        # Creamos interpolacion del ISRF con las longitudes de onda del SGM
-        #cs = interp1d(wv_isrf, isrf, fill_value=(0, 0), bounds_error=False)
-        #interp_isrf = cs(sgm_wv) # Vector 1D
-
-        #for ialt in range(sgm_toa.shape[0]):
-          #  for iact in range(sgm_toa.shape[1]):
-
-             #   toa[ialt, iact] = np.sum (sgm_toa[ialt,iact,:] * interp_isrf)
-
-        #
         for ialt in range(sgm_toa.shape[0]):
             for iact in range(sgm_toa.shape[1]):
 
-                cs = interp1d(sgm_wv, sgm_toa[ialt, iact, :], fill_value=(0, 0), bounds_error=False)
+                # Interpolamos el espectro del píxel sobre la malla de la ISRF.
+                cs = interp1d(
+                    sgm_wv,
+                    sgm_toa[ialt, iact, :],
+                    fill_value=(0, 0),
+                    bounds_error=False,
+                )
+
                 sgm_interp = cs(wv_isrf)
 
-                # Suma ponderada con el ISRF normalizado
+                # Calculamos la suma ponderada con la respuesta normalizada.
                 toa[ialt, iact] = np.sum(sgm_interp * isrf)
 
         return toa
-
-
