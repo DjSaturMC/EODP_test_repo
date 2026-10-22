@@ -17,9 +17,9 @@ from ism.src.ism import ism
 
 auxdir = r"C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EODP_codigo\\auxiliary"
 
-indir = r"C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EODP_TER_2021-20260910T154758Z-1-001\\EODP_TER_2021\\EODP-TS-ISM\\input\\gradient_alt100_act150"
+indir = r"C:\Users\marco\OneDrive\Escritorio\PROCESADO DE DATOS TIERRA\EODP-TS-E2E-20261022T155646Z-1-001\EODP-TS-E2E\sgm_out"
 
-outdir = r"C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EODP_TER_2021-20260910T154758Z-1-001\\EODP_TER_2021\\EODP-TS-ISM\\output_test_marco"
+outdir = r"C:\\Users\\marco\\OneDrive\\Escritorio\\PROCESADO DE DATOS TIERRA\\EODP-TS-E2E-20261022T155646Z-1-001\\EODP-TS-E2E\\output_test_marco"
 
 
 class salidaDoble:
