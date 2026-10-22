@@ -91,13 +91,45 @@ class l1c(initL1c):
         y = np.asarray(lon, dtype=np.float64).ravel()
         z = np.asarray(toa, dtype=np.float64).ravel()
 
-        # Construimos el interpolante de las radiancias originales.
-        tck = bisplrep(x, y, z)
+        # Comprobamos que las entradas del ajuste sean válidas.
+        if not (
+            np.all(np.isfinite(x))
+            and np.all(np.isfinite(y))
+            and np.all(np.isfinite(z))
+        ):
+            raise ValueError(
+                f"Encontramos coordenadas o radiancias no válidas en {band}."
+            )
+
+        # Limitamos la memoria reservada para los nudos del ajuste.
+        tck, fp, ier, mensaje = bisplrep(
+            x, y, z,
+            nxest=50,
+            nyest=50,
+            full_output=True
+        )
+
+        # Comprobamos que el ajuste termine correctamente.
+        if ier > 0 or not np.all(np.isfinite(tck[2])):
+            raise RuntimeError(
+                f"No hemos obtenido un ajuste válido para {band}: {mensaje}"
+            )
+
+        self.logger.info(
+            "Ajuste de %s completado: ier=%s; suma de residuos=%.6g",
+            band, ier, fp
+        )
 
         # Recuperamos las coordenadas de cada celda e interpolamos su radiancia.
         for ii in range(len(mgrs_tiles)):
             lat_l1c[ii], lon_l1c[ii] = m.toLatLon(mgrs_tiles[ii])
             toa_l1c[ii] = bisplev(lat_l1c[ii], lon_l1c[ii], tck)
+
+        # Revisamos las radiancias antes de guardar el producto.
+        if not np.all(np.isfinite(toa_l1c)):
+            raise ValueError(
+                f"La reproyección ha generado radiancias no válidas en {band}."
+            )
 
         return lat_l1c, lon_l1c, toa_l1c
 
